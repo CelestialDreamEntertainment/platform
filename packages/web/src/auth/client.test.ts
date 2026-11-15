@@ -175,6 +175,29 @@ describe('createAuthClient', () => {
         expect(navigate).toHaveBeenCalledWith('/bye');
     });
 
+    it.each([
+        ['a failed call', respond(500, { error: { code: 'internal' } })],
+        ['a body without a redirect', respond(200, {})],
+        ['a non-JSON body', new Response('<html>', { status: 200 })]
+    ])('signs out to the home page after %s', async (_, response) => {
+        const { client, navigate } = setup([response]);
+        await client.signOut();
+        expect(client.getState()).toEqual({ status: 'signedOut' });
+        expect(navigate).toHaveBeenCalledWith('/');
+    });
+
+    it('signs out to the home page when the network fails', async () => {
+        const navigate = vi.fn();
+        const client = createAuthClient({
+            navigate,
+            fetch: async () => {
+                throw new TypeError('offline');
+            }
+        });
+        await client.signOut();
+        expect(navigate).toHaveBeenCalledWith('/');
+    });
+
     it('uses the browser by default', async () => {
         const fetch = vi.fn(async () => respond(401));
         vi.stubGlobal('fetch', fetch);

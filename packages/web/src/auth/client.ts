@@ -149,14 +149,22 @@ export const createAuthClient = <Scope extends string = string>(
             navigate(`/api/auth/login?return_to=${encodeURIComponent(returnTo)}`);
         },
         signOut: async () => {
-            const res = await doFetch('/api/auth/logout', {
-                method: 'POST',
-                headers: CSRF_HEADERS,
-                credentials: 'same-origin'
-            });
-            const { redirectTo } = (await res.json()) as { redirectTo: string };
+            let redirectTo: unknown;
+            try {
+                const res = await doFetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: CSRF_HEADERS,
+                    credentials: 'same-origin'
+                });
+                redirectTo = res.ok
+                    ? ((await res.json()) as { redirectTo?: unknown }).redirectTo
+                    : undefined;
+            } catch {
+                redirectTo = undefined;
+            }
             signedOut();
-            navigate(redirectTo);
+            // Even if the server call fails, the in-memory token is gone, so land on the home page.
+            navigate(typeof redirectTo === 'string' ? redirectTo : '/');
         }
     };
 };
