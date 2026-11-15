@@ -10,3 +10,4 @@ coverage/
 *.tfstate.*
 *.tfplan
 crash.log
+*.tsbuildinfo

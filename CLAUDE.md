@@ -2,7 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-The suite-wide `../CLAUDE.md` and the design in `../README.md` also apply. This repo is not scaffolded yet, so there are no commands. Add them here once they exist.
+The suite-wide `../CLAUDE.md` and the design in `../README.md` also apply.
+
+## Commands
+Tool versions come from `mise.toml` (Node 24, pnpm, Terraform). Run everything from the repo root:
+- `pnpm install`: install dependencies (also sets up the husky pre-commit hook)
+- `pnpm test`: unit and type-level tests with coverage. Coverage below 100% fails.
+- `pnpm test:watch`: Vitest in watch mode
+- `pnpm lint`: ESLint, then Prettier in check mode
+- `pnpm format`: apply Prettier
+- `pnpm typecheck`: `tsc -b` across the packages
+- `pnpm build`: compile each package to `dist/`
+
+Type-level tests live in `*.test-d.ts` files next to the code. Markdown is excluded from Prettier so docs keep their hand-written layout.
 
 ## What this repo is
 The `platform` repo: the `runtime`, `build`, and `web` npm packages, Terraform modules, reusable GitHub Actions workflows, and `local-dev/` config. Nothing here is deployed. Releasing means publishing, and apps adopt new versions through their own PRs.

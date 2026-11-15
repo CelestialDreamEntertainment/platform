@@ -1,9 +1,9 @@
 # platform
 Shared code for the apps suite: npm packages, Terraform modules, reusable CI workflows, and local dev config. Apps pin one platform version and upgrade on their own schedule.
 
-> **Status:** not scaffolded yet. The design lives in the suite README (`../README.md`), which is the source of truth until this repo has code.
+> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `build`, `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
 
-## What's here (planned)
+## What's here
 
 | Part | Purpose |
 |---|---|
@@ -25,5 +25,49 @@ The packages are published publicly to npmjs.com as `@sbwp/runtime`, `@sbwp/buil
 ## Security
 This repo stores no secrets: no AWS credentials and no npm token. The reusable workflows run in each calling app's context with that app's own OIDC role.
 
+## Using `runtime`
+An app declares its routes once, in its manifest:
+
+```ts
+import { defineApp, route } from '@sbwp/runtime';
+
+export default defineApp({
+    name: 'events',
+    scopes: ['events:guest', 'events:host'],
+    baseScope: 'events:guest',
+    routes: [
+        route('GET', '/events/:id', './handlers/getEvent'),
+        route('POST', '/events', './handlers/createEvent', { scopes: ['events:host'] }),
+        route('GET', '/health', './handlers/health', { public: true })
+    ]
+});
+```
+
+Each handler file exports `handler`, made with `defineHandler` (or `definePublicHandler` for public routes). The zod schemas validate the request and type it, and `user.has` only accepts the app's own scopes:
+
+```ts
+import { defineHandler, NotFoundError } from '@sbwp/runtime';
+import { z } from 'zod';
+import app from '../app.js';
+
+export const handler = defineHandler(
+    app,
+    { params: z.object({ id: z.string() }) },
+    async ({ params, user }, ctx) => {
+        const event = await ctx.db.collection('events').findOne({ _id: params.id });
+        if (!event) {
+            throw new NotFoundError();
+        }
+        return user.has('events:host') ? event : { ...event, rsvps: undefined };
+    }
+);
+```
+
+- A returned value is a 200 JSON response, `undefined` is a 204, and `created(x)`, `noContent()` and `reply(status, x)` cover the rest.
+- Thrown `HttpError`s (`BadRequestError`, `NotFoundError`, ...) become their status. Anything else is logged and becomes a 500 with no details.
+- `wrap(handler, { method, path })` turns a handler into the route's Lambda function. The `build` CLI generates that call, so apps never write it. It fails closed: 401 without a user, 403 without every required scope.
+- `ctx.db` is the app's own Mongo database (`MONGODB_URI`, defaulting to local Mongo), opened on first use. `ctx.log` writes JSON lines tagged with the request ID and route.
+- Unit tests call `handler.handle(request, ctx)` directly with a fake `ctx`.
+
 ## Development
-Planned standard scripts: `pnpm test`, `pnpm lint`, `pnpm build`. Tool versions are pinned in `mise.toml`.
+Tool versions are pinned in `mise.toml`. `pnpm test`, `pnpm lint`, `pnpm typecheck` and `pnpm build` run from the root. CI runs all four on every PR and push to main, and checks that PR titles follow Conventional Commits.
