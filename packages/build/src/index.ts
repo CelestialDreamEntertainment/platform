@@ -17,3 +17,8 @@ export {
     type RouteEntry,
     type RoutesJson
 } from './routes-json.js';
+export { handleAuth, CSRF_HEADER, CSRF_VALUE, REFRESH_COOKIE } from './dev/auth.js';
+export { runDev, type DevOptions } from './dev/dev.js';
+export { PORTS, portsFor } from './dev/ports.js';
+export { startDevServer, type DevServer, type DevServerOptions } from './dev/server.js';
+export { FAKE_ISSUER } from './dev/tokens.js';

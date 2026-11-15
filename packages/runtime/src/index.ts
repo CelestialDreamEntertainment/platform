@@ -37,4 +37,13 @@ export {
     type ScheduleDef
 } from './manifest.js';
 export { created, isReply, noContent, reply, type Reply, type ReplyBody } from './reply.js';
+export {
+    createSecrets,
+    envSecrets,
+    parameterSecrets,
+    secretEnvName,
+    ssmReader,
+    type ParameterReader,
+    type Secrets
+} from './secrets.js';
 export { userFromClaims, type Claims, type User } from './user.js';

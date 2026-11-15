@@ -1,0 +1,17 @@
+# Local HTTPS for every app, the same /api split CloudFront makes in AWS.
+# *.local.sabrinabea.com resolves to 127.0.0.1. Caddy serves it from its own local CA:
+# run `caddy trust` once, then `caddy run --config local-dev/Caddyfile` from this repo.
+# Each app's port pair must match PORTS in packages/build/src/dev/ports.ts.
+{
+	local_certs
+}
+
+events.local.sabrinabea.com {
+	reverse_proxy /api/* localhost:4102
+	reverse_proxy localhost:5102
+}
+
+admin.local.sabrinabea.com {
+	reverse_proxy /api/* localhost:4103
+	reverse_proxy localhost:5103
+}

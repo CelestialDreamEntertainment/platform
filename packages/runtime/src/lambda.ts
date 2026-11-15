@@ -12,6 +12,7 @@ import type { Context, Handler, Schemas } from './handler.js';
 import { createLog, type Log } from './log.js';
 import { requiredScopes, type HttpMethod } from './manifest.js';
 import { isReply } from './reply.js';
+import { createSecrets, type Secrets } from './secrets.js';
 import { userFromClaims, type Claims, type User } from './user.js';
 
 type ClaimValue = string | number | boolean | readonly string[];
@@ -39,6 +40,7 @@ export type ApiResult = {
 export type WrapOptions = {
     readonly db?: (app: string) => Db;
     readonly log?: Log;
+    readonly secrets?: Secrets;
 };
 
 const HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' };
@@ -123,6 +125,7 @@ export const wrap = <S extends Schemas, Scope extends string, Public extends boo
     const required = requiredScopes(app, def) as Scope[];
     const openDb = options.db ?? getDb;
     const baseLog = options.log ?? createLog({ app: app.name });
+    const secrets = options.secrets ?? createSecrets();
 
     return async (event) => {
         const log = baseLog.child({
@@ -153,6 +156,7 @@ export const wrap = <S extends Schemas, Scope extends string, Public extends boo
                 get db() {
                     return openDb(app.name);
                 },
+                secrets,
                 log
             };
             const result: unknown = await handler.handle(request as never, ctx);

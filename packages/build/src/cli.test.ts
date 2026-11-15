@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Running } from './dev/dev.js';
 import { fixtureApp } from '../test/fixture.js';
 import { run, type Io } from './cli.js';
 
@@ -70,5 +71,48 @@ describe('sbwp CLI', () => {
         const t = io('/');
         expect(await run(['deploy'], t.io)).toBe(1);
         expect(t.err.join('\n')).toContain("unknown command 'deploy'");
+    });
+
+    describe('dev', () => {
+        const devIo = (cwd: string, nodeVersion = '24.22.3') => {
+            const t = io(cwd, nodeVersion);
+            const started: Running[] = [];
+            return {
+                ...t,
+                started,
+                io: { ...t.io, dev: { started: (r: Running) => started.push(r) } }
+            };
+        };
+
+        it('starts the dev environment', async () => {
+            const dir = await fixtureApp();
+            const t = devIo(dir);
+            expect(await run(['dev', '--no-mongo', '--no-web', '--port', '0'], t.io)).toBe(0);
+            expect(t.out[0]).toMatch(/^API on http/);
+            await t.started[0]?.stop();
+        });
+
+        it('reports a failure to start', async () => {
+            const dir = await fixtureApp({ 'api/app.ts': 'export default 1;\n' });
+            const t = devIo(dir);
+            expect(await run(['dev', '--no-mongo', '--no-web'], t.io)).toBe(1);
+            expect(t.err[0]).toContain('must export default defineApp');
+        });
+
+        it('refuses to start on the wrong Node version', async () => {
+            const t = devIo(await fixtureApp(), '22.0.0');
+            expect(await run(['dev'], t.io)).toBe(1);
+        });
+
+        it('stops everything on Ctrl-C by default', async () => {
+            const dir = await fixtureApp();
+            const t = io(dir);
+            const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+            expect(await run(['dev', '--no-mongo', '--no-web', '--port', '0'], t.io)).toBe(0);
+            process.emit('SIGINT');
+            await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
+            process.removeAllListeners('SIGTERM');
+            exit.mockRestore();
+        });
     });
 });

@@ -2,6 +2,7 @@ import type { Db } from 'mongodb';
 import type { z } from 'zod';
 import type { Log } from './log.js';
 import type { AppManifest } from './manifest.js';
+import type { Secrets } from './secrets.js';
 import type { User } from './user.js';
 
 /**
@@ -33,6 +34,7 @@ export type Request<S extends Schemas, Scope extends string, Public extends bool
 /** A handler's dependencies. Real implementations in AWS, local ones in dev, fakes in tests. */
 export type Context = {
     readonly db: Db;
+    readonly secrets: Secrets;
     readonly log: Log;
 };
 

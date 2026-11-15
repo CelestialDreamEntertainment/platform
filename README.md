@@ -1,7 +1,7 @@
 # platform
 Shared code for the apps suite: npm packages, Terraform modules, reusable CI workflows, and local dev config. Apps pin one platform version and upgrade on their own schedule.
 
-> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `packages/build` bundles the Lambdas and writes the routes JSON. The local dev server, `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
+> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `packages/build` bundles the Lambdas, writes the routes JSON, and runs the local dev environment with fake sign-in. `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
 
 ## What's here
 
@@ -67,12 +67,15 @@ export const handler = defineHandler(
 - Thrown `HttpError`s (`BadRequestError`, `NotFoundError`, ...) become their status. Anything else is logged and becomes a 500 with no details.
 - `wrap(handler, { method, path })` turns a handler into the route's Lambda function. The `build` CLI generates that call, so apps never write it. It fails closed: 401 without a user, 403 without every required scope.
 - `ctx.db` is the app's own Mongo database (`MONGODB_URI`, defaulting to local Mongo), opened on first use. `ctx.log` writes JSON lines tagged with the request ID and route.
+- `ctx.secrets.get('client-secret')` reads an SSM SecureString at `<SECRETS_PREFIX>/client-secret` when the deployment sets `SECRETS_PREFIX` (e.g. `/events/dev`), cached per process. Locally it reads `SECRET_CLIENT_SECRET` from the environment, usually set in `.env.local`. The AWS SDK is an optional peer dependency, since the Lambda runtime provides it.
 - Unit tests call `handler.handle(request, ctx)` directly with a fake `ctx`.
 
 ## Using `build`
 The `sbwp` CLI runs in an app repo:
 - `sbwp build` loads the manifest (`api/app.ts`, or `--manifest`) and checks every handler against its route. Each module must export `handler`, be public exactly when its route is, and declare a `z.object` params schema with exactly the path's parameters. All problems are reported at once. It then bundles one ES module per route with esbuild (target `node24`, AWS SDK left external), zips each deterministically, and writes `routes.json` next to the zips in `dist/api` (or `--out`).
 - `sbwp check-node` fails clearly when the running Node or the app's `mise.toml` pin isn't Node 24. `build` runs the same check first.
+
+- `sbwp dev` starts the local Mongo container (`sbwp-mongo`, created on first use, with data in a named volume), the local API server on the app's fixed port, and Vite on its frontend port. `--no-mongo`, `--no-web` and `--port` turn pieces off or move the API.
 
 Each zip holds `index.mjs` (handler `index.handler`) and its source map. `routes.json` is the contract with the Terraform modules, so its `version` changes with any breaking change to it:
 
@@ -99,6 +102,22 @@ Each zip holds `index.mjs` (handler `index.handler`) and its source map. `routes
 ```
 
 `scopes` is the full set the wrapper requires. `authorizerScopes` is what API Gateway checks (any of): the route's own scopes, or the base scope when it has none. Route IDs come from the method and path (`GET /events/:id` is `get-events-by-id`), and the build fails if two routes get the same one. Generated files go in the app's gitignored `.platform/` folder.
+
+## Local development
+The local API server stands in for API Gateway and the Lambdas. It serves the manifest's routes under `/api`, reloads handlers when files change, and runs each one through the real runtime wrapper with the same event shape API Gateway sends. Like API Gateway, it answers 401 without a valid access token and 403 when the token has none of the route's authorizer scopes, before the wrapper's own full-scope check.
+
+**Fake sign-in** replaces Cognito locally. Every app gets the same `/api/auth/*` routes the platform will deploy:
+
+| Route | Does locally |
+|---|---|
+| `GET /api/auth/login` | The dev sign-in page: pick an email (default `alice@test`), a name, and any of the manifest's scopes |
+| `POST /api/auth/login` | Sets the refresh token in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie scoped to `/api/auth`, then redirects to `return_to` (same-site paths only) |
+| `POST /api/auth/refresh` | Requires `X-Requested-With: sbwp`. Returns `{ accessToken, expiresIn }` from the cookie |
+| `POST /api/auth/logout` | Requires `X-Requested-With: sbwp`. Clears the cookie and returns `{ redirectTo }` |
+
+Tokens are ES256 JWTs with Cognito's claim shape (`sub`, `email`, `name`, `scope`, `cognito:groups`, `token_use`) from a fake issuer. The signing key is created in the app's gitignored `.platform/` folder, so sessions survive restarts. A user's `sub` is derived from their email, so test data stays attached across sign-ins. The fake issuer and JWT verification exist only in the dev server. A test checks that built Lambda bundles contain neither.
+
+**HTTPS and local domains:** `local-dev/Caddyfile` serves `https://events.local.sabrinabea.com` from Caddy's local CA, sending `/api/*` to the app's API port and everything else to Vite, the same split CloudFront makes. Run `caddy trust` once, then `caddy run --config local-dev/Caddyfile`. The port pairs live in `packages/build/src/dev/ports.ts` (Events: 4102/5102), and a test keeps the Caddyfile in step.
 
 ## Development
 Tool versions are pinned in `mise.toml`. `pnpm test`, `pnpm lint`, `pnpm typecheck` and `pnpm build` run from the root. CI runs all four on every PR and push to main, and checks that PR titles follow Conventional Commits.
