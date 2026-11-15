@@ -34,6 +34,7 @@
     "dependencies": {
         "commander": "^15.1.0",
         "esbuild": "^0.28.2",
+        "jose": "^6.2.17",
         "yazl": "^3.3.1"
     },
     "peerDependencies": {

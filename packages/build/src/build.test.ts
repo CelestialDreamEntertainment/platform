@@ -5,6 +5,7 @@ import type { ApiEvent, ApiResult } from '@sbwp/runtime';
 import { describe, expect, it } from 'vitest';
 import { fixtureApp } from '../test/fixture.js';
 import { buildApi, BuildError, loadManifest } from './build.js';
+import { FAKE_ISSUER } from './dev/tokens.js';
 
 const MANIFEST = "import { defineApp, route } from '@sbwp/runtime';\nexport default defineApp(";
 
@@ -62,6 +63,18 @@ describe('buildApi', () => {
             requestContext: { requestId: 'r', ...guest }
         });
         expect(create.statusCode).toBe(403);
+    });
+
+    it('never bundles the fake sign-in or JWT verification', async () => {
+        const dir = await fixtureApp();
+        await buildApi({ appDir: dir });
+        const bundle = await readFile(
+            join(dir, '.platform/api/lambdas/get-events/index.mjs'),
+            'utf8'
+        );
+        expect(bundle).not.toContain(FAKE_ISSUER);
+        expect(bundle).not.toContain('jwtVerify');
+        expect(bundle).not.toContain('jose');
     });
 
     it('is deterministic', async () => {

@@ -320,6 +320,17 @@ describe('wrap', () => {
             expect(body(result)).toBe('events');
         });
 
+        it('gives handlers the secrets', async () => {
+            const secrets = { get: async (name: string) => `secret:${name}` };
+            const handler = defineHandler(app, {}, (_, ctx) => ctx.secrets.get('key'));
+            const result = await wrap(
+                handler,
+                { method: 'GET', path: '/events' },
+                { secrets }
+            )(event({ claims: guest }));
+            expect(body(result)).toBe('secret:key');
+        });
+
         it('gives handlers a logger tagged with the request', async () => {
             const { lines, log } = silent();
             const handler = defineHandler(app, {}, (_, ctx) => {

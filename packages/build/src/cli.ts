@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { buildApi, BuildError, DEFAULT_MANIFEST, DEFAULT_OUT_DIR } from './build.js';
+import { runDev, type DevDeps, type Running } from './dev/dev.js';
 import { checkNodeVersion } from './node-version.js';
 
 export type Io = {
@@ -9,6 +10,15 @@ export type Io = {
     readonly nodeVersion: string;
     readonly out: (line: string) => void;
     readonly err: (line: string) => void;
+    /** Overrides for `dev`'s process handling, for tests. */
+    readonly dev?: Omit<DevDeps, 'out'> & { readonly started?: (running: Running) => void };
+};
+
+/** Stops the dev processes cleanly on Ctrl-C. */
+const stopOnSignal = (running: Running): void => {
+    const stop = () => void running.stop().then(() => process.exit(0));
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
 };
 
 const readMise = (appDir: string): string | undefined => {
@@ -68,6 +78,32 @@ export const run = async (argv: readonly string[], io: Io): Promise<number> => {
                 code = 1;
             }
         });
+
+    program
+        .command('dev')
+        .description('Run local Mongo, the local API with fake sign-in, and Vite')
+        .option('--manifest <file>', 'the routes manifest', DEFAULT_MANIFEST)
+        .option('--port <port>', "the API port (default: the app's fixed port)", (v) => Number(v))
+        .option('--no-mongo', "don't start the local Mongo container")
+        .option('--no-web', "don't start Vite")
+        .action(
+            async (options: { manifest: string; port?: number; mongo: boolean; web: boolean }) => {
+                if (!nodeOk(io.cwd)) {
+                    code = 1;
+                    return;
+                }
+                try {
+                    const running = await runDev(
+                        { appDir: io.cwd, ...options },
+                        { ...io.dev, out: io.out }
+                    );
+                    (io.dev?.started ?? stopOnSignal)(running);
+                } catch (error) {
+                    io.err((error as Error).message);
+                    code = 1;
+                }
+            }
+        );
 
     try {
         await program.parseAsync(argv, { from: 'user' });
