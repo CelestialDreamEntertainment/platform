@@ -7,12 +7,13 @@ The suite-wide `../CLAUDE.md` and the design in `../README.md` also apply.
 ## Commands
 Tool versions come from `mise.toml` (Node 24, pnpm, Terraform). Run everything from the repo root:
 - `pnpm install`: install dependencies (also sets up the husky pre-commit hook)
-- `pnpm test`: unit and type-level tests with coverage. Coverage below 100% fails.
+- `pnpm test`: builds the packages, then runs unit and type-level tests with coverage. Coverage below 100% fails. `build`'s tests bundle a fixture app (`packages/build/test/fixtures/events`), which needs `runtime` built.
 - `pnpm test:watch`: Vitest in watch mode
 - `pnpm lint`: ESLint, then Prettier in check mode
 - `pnpm format`: apply Prettier
-- `pnpm typecheck`: `tsc -b` across the packages
+- `pnpm typecheck`: `tsc -b` across the packages, then the test files too (`tsconfig.test.json`). Vitest doesn't type-check `*.test.ts` files.
 - `pnpm build`: compile each package to `dist/`
+- `node packages/build/bin/sbwp.js build` in an app directory: try the CLI against a local app
 
 Type-level tests live in `*.test-d.ts` files next to the code. Markdown is excluded from Prettier so docs keep their hand-written layout.
 

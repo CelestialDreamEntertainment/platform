@@ -5,3 +5,4 @@ dist/
 coverage/
 # Docs keep their hand-written layout
 *.md
+.platform/

@@ -1,0 +1,81 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { Command, CommanderError } from 'commander';
+import { buildApi, BuildError, DEFAULT_MANIFEST, DEFAULT_OUT_DIR } from './build.js';
+import { checkNodeVersion } from './node-version.js';
+
+export type Io = {
+    readonly cwd: string;
+    readonly nodeVersion: string;
+    readonly out: (line: string) => void;
+    readonly err: (line: string) => void;
+};
+
+const readMise = (appDir: string): string | undefined => {
+    const file = join(appDir, 'mise.toml');
+    return existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+};
+
+/** Runs the `sbwp` CLI and returns the exit code. */
+export const run = async (argv: readonly string[], io: Io): Promise<number> => {
+    const program = new Command('sbwp')
+        .description('Build and run apps on the platform')
+        .exitOverride()
+        .configureOutput({
+            writeOut: (s) => io.out(s.trimEnd()),
+            writeErr: (s) => io.err(s.trimEnd())
+        });
+
+    const nodeOk = (appDir: string): boolean => {
+        const problem = checkNodeVersion(io.nodeVersion, readMise(appDir));
+        if (problem) {
+            io.err(problem);
+        }
+        return !problem;
+    };
+
+    let code = 0;
+    program
+        .command('check-node')
+        .description("Check that Node and the app's mise.toml match the platform's Node version")
+        .action(() => {
+            code = nodeOk(io.cwd) ? 0 : 1;
+        });
+    program
+        .command('build')
+        .description('Bundle one Lambda per route and write the routes JSON')
+        .option('--manifest <file>', 'the routes manifest', DEFAULT_MANIFEST)
+        .option('--out <dir>', 'where to write the zips and routes JSON', DEFAULT_OUT_DIR)
+        .action(async (options: { manifest: string; out: string }) => {
+            if (!nodeOk(io.cwd)) {
+                code = 1;
+                return;
+            }
+            try {
+                const json = await buildApi({
+                    appDir: io.cwd,
+                    manifest: options.manifest,
+                    outDir: options.out
+                });
+                io.out(
+                    `Built ${json.routes.length} routes for ${json.app} into ${resolve(io.cwd, options.out)}`
+                );
+            } catch (error) {
+                if (!(error instanceof BuildError)) {
+                    throw error;
+                }
+                io.err(error.message);
+                code = 1;
+            }
+        });
+
+    try {
+        await program.parseAsync(argv, { from: 'user' });
+    } catch (error) {
+        if (error instanceof CommanderError) {
+            return error.exitCode;
+        }
+        throw error;
+    }
+    return code;
+};

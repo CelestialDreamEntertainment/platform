@@ -47,6 +47,14 @@ describe('createLog', () => {
         });
     });
 
+    it('never lets fields overwrite level, time or message', () => {
+        const lines: string[] = [];
+        const log = createLog({ message: 'base', level: 'x' }, (line) => lines.push(line));
+        log.warn('real', { time: 'then', level: 'debug' });
+        expect(JSON.parse(lines[0] ?? '')).toMatchObject({ level: 'warn', message: 'real' });
+        expect(JSON.parse(lines[0] ?? '').time).not.toBe('then');
+    });
+
     it('adds child fields to every line', () => {
         const { log, lines } = capture();
         log.child({ requestId: 'r1' }).child({ route: 'GET /x' }).info('hi');
