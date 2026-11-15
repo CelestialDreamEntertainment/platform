@@ -4,5 +4,5 @@
         "composite": false,
         "noEmit": true
     },
-    "include": ["packages/*/src", "packages/*/test", "*.ts"]
+    "include": ["*.ts"]
 }

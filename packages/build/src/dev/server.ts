@@ -17,6 +17,7 @@ import { DEFAULT_MANIFEST, loadManifest } from '../build.js';
 import { checkHandler } from '../check.js';
 import { loadModule, WORK_DIR } from '../load.js';
 import { authorizerScopes } from '../routes-json.js';
+import { writeRoutesTypes } from '../types.js';
 import { handleAuth } from './auth.js';
 import { matchRoute, queryParameters } from './router.js';
 import { loadKeys, verifyAccessToken, type Keys } from './tokens.js';
@@ -29,6 +30,8 @@ export type DevServerOptions = {
     /** Reload handlers when files under the manifest's folder change. Default true. */
     readonly watch?: boolean;
     readonly log?: Log;
+    /** Regenerate the routes types on every load. Default true. */
+    readonly writeTypes?: boolean;
     /** Passed to the runtime wrapper, e.g. to give handlers a test database. */
     readonly wrapOptions?: WrapOptions;
 };
@@ -67,7 +70,13 @@ const headersOf = (req: IncomingMessage): Record<string, string | undefined> =>
  * same event shape, and runs each handler through the real runtime wrapper. `/api/auth/*` is the
  * fake sign-in. JWT verification exists only here, never in the runtime.
  */
+/** The dev server signs tokens with a fake issuer, so it only ever listens on loopback. */
+export const LOOPBACK_HOSTS = ['127.0.0.1', '::1', 'localhost'];
+
 export const startDevServer = async (options: DevServerOptions): Promise<DevServer> => {
+    if (options.host !== undefined && !LOOPBACK_HOSTS.includes(options.host)) {
+        throw new Error(`The dev server only listens on localhost, not ${options.host}`);
+    }
     const appDir = resolve(options.appDir);
     const manifestFile = options.manifest ?? DEFAULT_MANIFEST;
     const log = options.log ?? createLog({ app: 'dev-server' });
@@ -95,6 +104,12 @@ export const startDevServer = async (options: DevServerOptions): Promise<DevServ
                 lambdas.set(r, [
                     `${r.method} ${r.path}: can't load ${r.handler}: ${(error as Error).message}`
                 ]);
+            }
+        }
+        if (options.writeTypes ?? true) {
+            const types = await writeRoutesTypes({ appDir, manifest: manifestFile, app });
+            if (types.changed) {
+                log.info(`Wrote ${types.file}`);
             }
         }
         for (const problems of lambdas.values()) {

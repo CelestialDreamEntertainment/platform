@@ -22,3 +22,4 @@ export { runDev, type DevOptions } from './dev/dev.js';
 export { PORTS, portsFor } from './dev/ports.js';
 export { startDevServer, type DevServer, type DevServerOptions } from './dev/server.js';
 export { FAKE_ISSUER } from './dev/tokens.js';
+export { routesTypes, typesFile, writeRoutesTypes, type TypesResult } from './types.js';

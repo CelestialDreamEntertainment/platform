@@ -12,7 +12,11 @@ export default tseslint.config(
         rules: {
             'prefer-arrow-callback': 'error',
             'func-style': ['error', 'expression'],
-            '@typescript-eslint/consistent-type-imports': 'error'
+            '@typescript-eslint/consistent-type-imports': 'error',
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+            ]
         }
     },
     prettier
