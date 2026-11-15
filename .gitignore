@@ -11,3 +11,4 @@ coverage/
 *.tfplan
 crash.log
 *.tsbuildinfo
+.platform/

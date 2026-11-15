@@ -26,10 +26,12 @@ export const createLog = (base: LogFields = {}, sink: LogSink = consoleSink): Lo
     const write =
         (level: LogLevel) =>
         (message: string, fields: LogFields = {}): void => {
-            const entry: LogFields = { level, time: new Date().toISOString(), message, ...base };
+            const entry: LogFields = { ...base };
             for (const [key, value] of Object.entries(fields)) {
                 entry[key] = serialize(value);
             }
+            // Set last, so fields can never overwrite them.
+            Object.assign(entry, { level, time: new Date().toISOString(), message });
             sink(JSON.stringify(entry), level);
         };
     return {

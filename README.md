@@ -1,7 +1,7 @@
 # platform
 Shared code for the apps suite: npm packages, Terraform modules, reusable CI workflows, and local dev config. Apps pin one platform version and upgrade on their own schedule.
 
-> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `build`, `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
+> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `packages/build` bundles the Lambdas and writes the routes JSON. The local dev server, `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
 
 ## What's here
 
@@ -68,6 +68,37 @@ export const handler = defineHandler(
 - `wrap(handler, { method, path })` turns a handler into the route's Lambda function. The `build` CLI generates that call, so apps never write it. It fails closed: 401 without a user, 403 without every required scope.
 - `ctx.db` is the app's own Mongo database (`MONGODB_URI`, defaulting to local Mongo), opened on first use. `ctx.log` writes JSON lines tagged with the request ID and route.
 - Unit tests call `handler.handle(request, ctx)` directly with a fake `ctx`.
+
+## Using `build`
+The `sbwp` CLI runs in an app repo:
+- `sbwp build` loads the manifest (`api/app.ts`, or `--manifest`) and checks every handler against its route. Each module must export `handler`, be public exactly when its route is, and declare a `z.object` params schema with exactly the path's parameters. All problems are reported at once. It then bundles one ES module per route with esbuild (target `node24`, AWS SDK left external), zips each deterministically, and writes `routes.json` next to the zips in `dist/api` (or `--out`).
+- `sbwp check-node` fails clearly when the running Node or the app's `mise.toml` pin isn't Node 24. `build` runs the same check first.
+
+Each zip holds `index.mjs` (handler `index.handler`) and its source map. `routes.json` is the contract with the Terraform modules, so its `version` changes with any breaking change to it:
+
+```json
+{
+    "version": 1,
+    "app": "events",
+    "runtime": "nodejs24.x",
+    "scopes": ["events:guest", "events:host"],
+    "baseScope": "events:guest",
+    "routes": [
+        {
+            "id": "post-events",
+            "method": "POST",
+            "path": "/events",
+            "public": false,
+            "scopes": ["events:guest", "events:host"],
+            "authorizerScopes": ["events:host"],
+            "zip": "post-events.zip",
+            "sha256": "<base64 SHA-256 of the zip, as Lambda's source_code_hash expects>"
+        }
+    ]
+}
+```
+
+`scopes` is the full set the wrapper requires. `authorizerScopes` is what API Gateway checks (any of): the route's own scopes, or the base scope when it has none. Route IDs come from the method and path (`GET /events/:id` is `get-events-by-id`), and the build fails if two routes get the same one. Generated files go in the app's gitignored `.platform/` folder.
 
 ## Development
 Tool versions are pinned in `mise.toml`. `pnpm test`, `pnpm lint`, `pnpm typecheck` and `pnpm build` run from the root. CI runs all four on every PR and push to main, and checks that PR titles follow Conventional Commits.
