@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fixtureApp } from '../../test/fixture.js';
@@ -15,12 +15,13 @@ const quiet = () => {
     return { lines, log: createLog({}, (line) => lines.push(line)) };
 };
 
-const start = async (files: Record<string, string> = {}, watch = false) => {
+const start = async (files: Record<string, string> = {}, watch = false, writeTypes = false) => {
     const dir = await fixtureApp(files);
     const { log, lines } = quiet();
     const server = await startDevServer({
         appDir: dir,
         watch,
+        writeTypes,
         log,
         wrapOptions: { db: () => ({ databaseName: 'events' }) as never, log }
     });
@@ -207,6 +208,24 @@ describe('dev server', () => {
         servers.push(server);
         expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
         log.mockRestore();
+    });
+
+    it.each(['0.0.0.0', '::', '192.168.1.5'])('refuses to listen on %s', async (host) => {
+        const dir = await fixtureApp();
+        await expect(
+            startDevServer({ appDir: dir, host, watch: false, log: quiet().log })
+        ).rejects.toThrow(`The dev server only listens on localhost, not ${host}`);
+    });
+
+    it('regenerates the routes types on load', async () => {
+        const { dir, server, lines } = await start({ 'api/routes.gen.ts': 'stale' }, false, true);
+        expect(await readFile(join(dir, 'api/routes.gen.ts'), 'utf8')).toContain(
+            'export type Routes'
+        );
+        expect(lines.some((l) => l.includes('Wrote api/routes.gen.ts'))).toBe(true);
+        lines.length = 0;
+        await server.reload();
+        expect(lines.some((l) => l.includes('Wrote'))).toBe(false);
     });
 
     it('fails to close twice', async () => {

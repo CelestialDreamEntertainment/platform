@@ -1,7 +1,7 @@
 # platform
 Shared code for the apps suite: npm packages, Terraform modules, reusable CI workflows, and local dev config. Apps pin one platform version and upgrade on their own schedule.
 
-> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `packages/build` bundles the Lambdas, writes the routes JSON, and runs the local dev environment with fake sign-in. `web`, the Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
+> **Status:** in progress. `packages/runtime` has the routes manifest, handler contract and Lambda wrapper. `packages/build` bundles the Lambdas, writes the routes JSON, and runs the local dev environment with fake sign-in. `packages/web` has the auth client, typed API client, theme, Vite preset and test fakes. The Terraform modules and the reusable workflows come next. The design lives in the suite README (`../README.md`).
 
 ## What's here
 
@@ -75,6 +75,7 @@ The `sbwp` CLI runs in an app repo:
 - `sbwp build` loads the manifest (`api/app.ts`, or `--manifest`) and checks every handler against its route. Each module must export `handler`, be public exactly when its route is, and declare a `z.object` params schema with exactly the path's parameters. All problems are reported at once. It then bundles one ES module per route with esbuild (target `node24`, AWS SDK left external), zips each deterministically, and writes `routes.json` next to the zips in `dist/api` (or `--out`).
 - `sbwp check-node` fails clearly when the running Node or the app's `mise.toml` pin isn't Node 24. `build` runs the same check first.
 
+- `sbwp types` writes `routes.gen.ts` next to the manifest: the `Routes` type the typed API client takes, importing each handler's type. It's committed, `sbwp dev` rewrites it on every save, and `sbwp types --check` fails in CI when it's stale.
 - `sbwp dev` starts the local Mongo container (`sbwp-mongo`, created on first use, with data in a named volume), the local API server on the app's fixed port, and Vite on its frontend port. `--no-mongo`, `--no-web` and `--port` turn pieces off or move the API.
 
 Each zip holds `index.mjs` (handler `index.handler`) and its source map. `routes.json` is the contract with the Terraform modules, so its `version` changes with any breaking change to it:
@@ -103,6 +104,37 @@ Each zip holds `index.mjs` (handler `index.handler`) and its source map. `routes
 
 `scopes` is the full set the wrapper requires. `authorizerScopes` is what API Gateway checks (any of): the route's own scopes, or the base scope when it has none. Route IDs come from the method and path (`GET /events/:id` is `get-events-by-id`), and the build fails if two routes get the same one. Generated files go in the app's gitignored `.platform/` folder.
 
+## Using `web`
+```tsx
+import { AuthProvider, createAuthClient, createAppTheme, createClient, cssVariablesResolver, RequireAuth, useUser } from '@sbwp/web';
+import { MantineProvider } from '@mantine/core';
+import type { Routes } from '../api/routes.gen.js';
+
+const auth = createAuthClient({ scopes: ['events:guest', 'events:host'] });
+export const api = createClient<Routes>({ auth });
+const theme = createAppTheme('grape');
+
+export const App = () => (
+    <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
+        <AuthProvider client={auth}>
+            <RequireAuth>
+                <Events />
+            </RequireAuth>
+        </AuthProvider>
+    </MantineProvider>
+);
+
+// Paths autocomplete, inputs are checked against each handler's zod schemas, and the
+// response type is what the handler returns after JSON (dates become strings).
+const event = await api.get('/events/:id', { params: { id } });
+```
+
+- **Auth client:** the access token stays in memory, and the refresh token stays in the HttpOnly cookie. `start()` (called by `<AuthProvider>`) restores the session through `/api/auth/refresh`, tokens refresh a minute before they expire, and concurrent refreshes share one request. `useUser()` gives the signed-in user, with `has` limited to the app's scopes. `<RequireAuth>` sends signed-out visitors to sign in and back.
+- **API client:** it calls `/api/...` with the token, refreshes and retries once on a 401, and throws `ApiError` (`status`, `code`, `message`, `issues`) for both the backend's errors and API Gateway's.
+- **Theme:** `baseTheme` only tunes contrast: a `#121212` dark background, brighter text and dimmed text, a darker primary shade in dark mode, and `autoContrast`. `cssVariablesResolver` darkens light mode's dimmed text so it meets WCAG AA. Tests check every pair at 4.5:1. `createAppTheme(primaryColor, overrides)` adds the app's own color.
+- **Vite preset:** `@sbwp/web/vite` exports `platformVite(config)`. The frontend lives in `web/` and builds to `dist/web`, `/api` is proxied to the local API server, `*.local.sabrinabea.com` is allowed, and `import.meta.env.BUILD_SHA`/`BUILD_TIME` are defined.
+- **Test fakes:** `@sbwp/web/testing` has `fakeAuthClient(user?)`, `fakeUser`, and `fakeApiClient<Routes>({ 'GET /events/:id': ({ params }) => ... })`, which is typed like the real client and fails with a 404 on routes without a fake.
+
 ## Local development
 The local API server stands in for API Gateway and the Lambdas. It serves the manifest's routes under `/api`, reloads handlers when files change, and runs each one through the real runtime wrapper with the same event shape API Gateway sends. Like API Gateway, it answers 401 without a valid access token and 403 when the token has none of the route's authorizer scopes, before the wrapper's own full-scope check.
 
@@ -116,6 +148,8 @@ The local API server stands in for API Gateway and the Lambdas. It serves the ma
 | `POST /api/auth/logout` | Requires `X-Requested-With: sbwp`. Clears the cookie and returns `{ redirectTo }` |
 
 Tokens are ES256 JWTs with Cognito's claim shape (`sub`, `email`, `name`, `scope`, `cognito:groups`, `token_use`) from a fake issuer. The signing key is created in the app's gitignored `.platform/` folder, so sessions survive restarts. A user's `sub` is derived from their email, so test data stays attached across sign-ins. The fake issuer and JWT verification exist only in the dev server. A test checks that built Lambda bundles contain neither.
+
+The dev server only listens on loopback (`127.0.0.1`, `::1` or `localhost`), because it signs tokens with the fake issuer.
 
 **HTTPS and local domains:** `local-dev/Caddyfile` serves `https://events.local.sabrinabea.com` from Caddy's local CA, sending `/api/*` to the app's API port and everything else to Vite, the same split CloudFront makes. Run `caddy trust` once, then `caddy run --config local-dev/Caddyfile`. The port pairs live in `packages/build/src/dev/ports.ts` (Events: 4102/5102), and a test keeps the Caddyfile in step.
 

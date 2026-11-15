@@ -4,6 +4,7 @@ import { Command, CommanderError } from 'commander';
 import { buildApi, BuildError, DEFAULT_MANIFEST, DEFAULT_OUT_DIR } from './build.js';
 import { runDev, type DevDeps, type Running } from './dev/dev.js';
 import { checkNodeVersion } from './node-version.js';
+import { writeRoutesTypes } from './types.js';
 
 export type Io = {
     readonly cwd: string;
@@ -70,6 +71,31 @@ export const run = async (argv: readonly string[], io: Io): Promise<number> => {
                 io.out(
                     `Built ${json.routes.length} routes for ${json.app} into ${resolve(io.cwd, options.out)}`
                 );
+            } catch (error) {
+                if (!(error instanceof BuildError)) {
+                    throw error;
+                }
+                io.err(error.message);
+                code = 1;
+            }
+        });
+
+    program
+        .command('types')
+        .description('Generate the Routes type for the typed API client, next to the manifest')
+        .option('--manifest <file>', 'the routes manifest', DEFAULT_MANIFEST)
+        .option('--check', 'fail if the committed file is out of date, instead of writing it')
+        .action(async (options: { manifest: string; check?: boolean }) => {
+            try {
+                const result = await writeRoutesTypes({ appDir: io.cwd, ...options });
+                if (options.check && result.changed) {
+                    io.err(`${result.file} is out of date. Run \`sbwp types\` and commit it.`);
+                    code = 1;
+                } else {
+                    io.out(
+                        result.changed ? `Wrote ${result.file}` : `${result.file} is up to date`
+                    );
+                }
             } catch (error) {
                 if (!(error instanceof BuildError)) {
                     throw error;

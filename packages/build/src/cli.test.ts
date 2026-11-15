@@ -73,6 +73,38 @@ describe('sbwp CLI', () => {
         expect(t.err.join('\n')).toContain("unknown command 'deploy'");
     });
 
+    describe('types', () => {
+        it('writes the routes types, then reports them up to date', async () => {
+            const dir = await fixtureApp();
+            await import('node:fs/promises').then((fs) => fs.rm(`${dir}/api/routes.gen.ts`));
+            const t = io(dir);
+            expect(await run(['types'], t.io)).toBe(0);
+            expect(await run(['types', '--check'], t.io)).toBe(0);
+            expect(t.out).toEqual(['Wrote api/routes.gen.ts', 'api/routes.gen.ts is up to date']);
+        });
+
+        it('fails the check when the file is stale', async () => {
+            const dir = await fixtureApp({ 'api/routes.gen.ts': 'stale' });
+            const t = io(dir);
+            expect(await run(['types', '--check'], t.io)).toBe(1);
+            expect(t.err[0]).toBe(
+                'api/routes.gen.ts is out of date. Run `sbwp types` and commit it.'
+            );
+        });
+
+        it('reports manifest problems', async () => {
+            const dir = await fixtureApp({ 'api/app.ts': 'export default 1;\n' });
+            const t = io(dir);
+            expect(await run(['types'], t.io)).toBe(1);
+            expect(t.err[0]).toContain('must export default defineApp');
+        });
+
+        it('rethrows unexpected errors', async () => {
+            const dir = await fixtureApp({ 'api/app.ts': 'this is not typescript' });
+            await expect(run(['types'], io(dir).io)).rejects.toThrow();
+        });
+    });
+
     describe('dev', () => {
         const devIo = (cwd: string, nodeVersion = '24.22.3') => {
             const t = io(cwd, nodeVersion);
