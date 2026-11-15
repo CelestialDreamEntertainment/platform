@@ -36,6 +36,9 @@
         "esbuild": "^0.28.2",
         "yazl": "^3.3.1"
     },
+    "peerDependencies": {
+        "@sbwp/runtime": "workspace:*"
+    },
     "devDependencies": {
         "@sbwp/runtime": "workspace:*",
         "@types/yazl": "^3.3.1",

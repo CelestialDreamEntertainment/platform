@@ -31,4 +31,5 @@ jobs:
             - run: pnpm lint
             - run: pnpm build
             - run: pnpm typecheck
-            - run: pnpm test
+            # pnpm test would build again, so run Vitest directly.
+            - run: pnpm exec vitest run --coverage
